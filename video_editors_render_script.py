@@ -64,7 +64,7 @@
 #
 # (3) RUN THIS SCRIPT FROM THE FOLDER USING CMD.EXE OR TERMINAL:
 #              (use the quotation marks for paths with spaces)
-#        "Path \ To \ blender" -b 1.blend -P my_render_script.py
+#        "Path \ To \ blender" -b 1.blend -P my_render_script.py -- [scenename]
 #
 #  Link to Detailed Instructions:
 #
@@ -85,7 +85,9 @@ import multiprocessing
 import math
 import subprocess
 import re
+import sys
 from pathlib import Path
+
 
 #----[ DETECT OPERATING SYSTEM ]
 my_platform = platform.system()
@@ -94,6 +96,8 @@ my_platform = platform.system()
 #
 #>> > > ENTER FULL PATH TO BLENDER AND FFMPEG FOR YOUR OPERATING SYSTEM  < < <<#  |  OS Specific Shortcuts like ~ (tilde) don't work - enter full path.
 #______________________________________________________________________________
+
+default_scene_name_to_render = "Scene"
 
 if my_platform == "Windows": #SET MICROSOFT WINDOWS PATHS BELOW
     blender_path = r"C:\Program Files\Blender Foundation\Blender\blender.exe"  #  | (leave "r" prefix) python doesn't like \ slashes
@@ -366,6 +370,27 @@ else:
 
 #______________________________________________________________________________
 #
+#               MANAGING PYTHON ARGUMENTS ON THE BLENDER COMMAND LINE
+#______________________________________________________________________________
+
+# The idea is to get an argument on the command line reserved for this script and
+# Blender.exe ignores what comes after [SPACE]--[SPACE]
+# This argument is now considered as the Scene name to be rendered
+# If not present "Scene" is a default setting
+
+argv = sys.argv
+argv = argv[argv.index("--") + 1:]  # get all args after " -- "
+
+# If one argument has been passed to PYTHON then we assume it is the target scene name
+# Otherwise we assume the Scene name will be the default Scene Name
+if len(argv) == 1 :
+    target_scene_name = argv[0]
+else:
+    target_scene_name = default_scene_name_to_render
+
+
+#______________________________________________________________________________
+#
 #               GET RENDER PROPERTY SETTINGS FROM THE .BLEND FILE
 #______________________________________________________________________________
 
@@ -396,7 +421,7 @@ scene_name_present = False                                                     #
 
 for scene in bpy.data.scenes:
 
-    if scene.name == "Scene":                                                  #  | We cycle through all the scenes, but only take settings from scene named "Scene"
+    if scene.name == target_scene_name :                                                  #  | We cycle through all the scenes, but only take settings from scene named "Scene"
 
         scene_name_present = True
 
@@ -485,29 +510,35 @@ script.\n\n" + 80 * "#")
 
     number_of_scenes += 1                                                      #  | How many scenes are we dealing with...
 
-    try:
-        for seq in scene.sequence_editor.sequences_all:                        #  | Generally, we don't use Scene Strips, but if the Scene Strips
-            if seq.bl_rna.name == "Scene Sequence" and scene.name == "Scene":  #  | only use a Sequencer, it will work. Only 3D breaks.
-                if not seq.use_sequence:
-                    scene_strip_in_vse_is_3d = True
-    except AttributeError:                                                     #  | When VSE is empty, there is no Attribute, so we catch the error.
-        print("VSE is Empty")
-
-    try:
-        for seq in scene.sequence_editor.sequences_all:
-            if seq.bl_rna.name == "Sound Sequence":
-                sound_strips += 1                                              #  | Count the number of total Sound Strips in all Scenes.
-                print("Sound Found")
-    except AttributeError:                                                     #  | When VSE is empty, there is no Attribute , so we catch the error.
-        print("VSE EMPTY")
+# One of the main purposes of turning the Scene name into a variable is to handle
+# multiple scenes in a single project/blend file.
+# The main scene could remain "Scene" but Rushes or the final output could be
+# rendered throught a compositing process during the post production workflow
+# In my opinion these lines are not useful anymore because VSE MUST BE EMPTY
+# otherwise compositing scene will never be taken into account as VSE comes first
+#    # try:
+#        # for seq in scene.sequence_editor.sequences_all:                        #  | Generally, we don't use Scene Strips, but if the Scene Strips
+#            # if seq.bl_rna.name == "Scene Sequence" and scene.name == "Scene":  #  | only use a Sequencer, it will work. Only 3D breaks.
+#                # if not seq.use_sequence:
+#                    # scene_strip_in_vse_is_3d = True
+#    # except AttributeError:                                                     #  | When VSE is empty, there is no Attribute, so we catch the error.
+#        # print("VSE is Empty")
+#
+#    # try:
+#        # for seq in scene.sequence_editor.sequences_all:
+#            # if seq.bl_rna.name == "Sound Sequence":
+#                # sound_strips += 1                                              #  | Count the number of total Sound Strips in all Scenes.
+#                # print("Sound Found")
+#    # except AttributeError:                                                     #  | When VSE is empty, there is no Attribute , so we catch the error.
+#        # print("VSE EMPTY")
 
 #----[ CHECK FOR SCENE NAMED "Scene" ]
 if not scene_name_present:                                                     #  | We must have a scene named "Scene" to get settings from.
     subprocess.call(clr_cmd, shell=True)
     print(80 * "#")
-    print("\n\n ! NO SCENE NAMED \"Scene\" ALERT !\n\n Please name your \
-primary scene, \"Scene\" . This is required so that blender\n knows \
-which scene it should take settings from. \n\n")
+    print("\n\n ! NO SCENE NAMED \" % s \" ALERT !\n\n Please name your \
+primary scene, \"Scene\" or give a valid scene name to render. This is \
+required so that blender\n knows which scene it should take settings from. \n\n" % target_scene_name)
     print(80 * "#")
     exit()
 
@@ -1013,7 +1044,7 @@ if not os.path.exists(full_root_filepath + working_dir_temp + slash\
 with open(full_root_filepath + click_me, "w+") as f:
     if my_platform == "Windows":
         f.write("echo off\n" + "\"" + blender_path + "\""\
-        + " -b " + assumed_blend_filename + " -P " + name_of_script)
+        + " -b " + assumed_blend_filename + " " + target_scene_name + " -P " + name_of_script)
 
     elif my_platform =="Darwin":
         f.write('#!/bin/bash\n'\
@@ -1022,7 +1053,7 @@ with open(full_root_filepath + click_me, "w+") as f:
         + 'exit 1\n'\
         + '}\n'
         + "\"" + blender_path + "\"" + " -b "\
-        + assumed_blend_filename + " -P " + name_of_script)
+        + assumed_blend_filename + " " + target_scene_name + " -P " + name_of_script)
 
     elif my_platform == "Linux":
         f.write('#!/bin/bash\n'\
@@ -1031,7 +1062,7 @@ with open(full_root_filepath + click_me, "w+") as f:
         + 'exit 1\n'\
         + '}\n'
         + terminal_cmd + " \"bash -c '" + "\"" + blender_path + "\""\
-        + " -b " + assumed_blend_filename + " -P " + name_of_script + "; \
+        + " -b " + assumed_blend_filename + " " + target_scene_name + " -P " + name_of_script + "; \
 exec /bin/bash -i'\"\n\n" + "###############  ENABLE CLICKABLE / EXECUTABLE \
 SCRIPTS  ###############\n# If this script opened in a text editor rather than\
  executing\n# inside a terminal window, it's because your file browser needs\n\
@@ -1045,7 +1076,7 @@ SCRIPTS  ###############\n# If this script opened in a text editor rather than\
         + 'exit 1\n'\
         + '}\n'
         + terminal_cmd + " \"bash -c '" + "\"" + blender_path + "\""\
-        + " -b " + assumed_blend_filename + " -P " + name_of_script + "; \
+        + " -b " + assumed_blend_filename + " " + target_scene_name + " -P " + name_of_script + "; \
 exec /bin/bash -i'\"\n\n" + "###############  ENABLE CLICKABLE / EXECUTABLE \
 SCRIPTS  ###############\n# If this script opened in a text editor rather than\
  executing\n# inside a terminal window, it's because your file browser needs\n\
@@ -1291,6 +1322,7 @@ while next_core <= cores_enabled:
 
     blender_command +=\
         "\"" + blender_path + "\"" " -b \"%s\"" % (filename_and_path)\
+    + " -S %s" % (target_scene_name)\
         + " -P " + "\"" + full_root_filepath + working_dir_temp + slash\
         + other_files_dir + slash + blendfile_override_setting_filename + "\""\
         + " -E %s" % (blender_render_engine)\
